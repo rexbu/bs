@@ -345,13 +345,10 @@ void http_receive_response(int socket, http_res_t *http_res, http_t *http) {
     int len = 0;
     int bufferSize = 1024;
     char buf[bufferSize];
-    http_res->response_code = read_timeout(socket, http->time_out);
+    http_res->response_code = read_timeout(socket, 3);
     if (http_res->response_code == BS_SUCCESS) {
         while((len = (int)read(socket, buf, sizeof(buf))) > 0) {
             data_append(&http_res->response, buf, len);
-            if (len < bufferSize) {
-                break;
-            }
         }
         
         if (len == -1) {
