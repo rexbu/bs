@@ -344,11 +344,17 @@ void http_send_request(int socket, http_res_t* http_res, http_t* http) {
 void http_receive_response(int socket, http_res_t *http_res, http_t *http) {
     int len = 0;
     int bufferSize = 1024;
+    int receveLength = 0;
     char buf[bufferSize];
-    http_res->response_code = read_timeout(socket, 3);
+    http_receive_header(socket, http_res, http);
+    http_res_header res_header = parse_header(http_res->response.mem);
     if (http_res->response_code == BS_SUCCESS) {
         while((len = (int)read(socket, buf, sizeof(buf))) > 0) {
             data_append(&http_res->response, buf, len);
+            receveLength += len;
+            if (receveLength >= res_header.content_length) {
+                break;
+            }
         }
         
         if (len == -1) {
