@@ -102,7 +102,7 @@ struct http_res_t{
 void* http_res_init(void *p);
 void http_res_destroy(void *p);
 
-state_t connect_socket(int sock, http_t *http);
+state_t connect_socket(int *sock, http_t *http);
 state_t http_response_parse(http_res_t *res);
 state_t read_timeout(int socket, uint32_t wait_seconds);
 state_t write_timeout(int socket, uint32_t wait_seconds);

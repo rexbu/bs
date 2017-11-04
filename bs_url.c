@@ -177,7 +177,7 @@ http_res_header parse_header(const char *response)
 http_res_t* http_perform(http_t* http) {
     int socket;
     http_res_t *res = bs_new(http_res);
-    socket = socket_tcp(BS_TRUE);
+    connect_socket(&socket, http);
     http_send_request(socket, res, http);
     if (res->response_code == BS_SUCCESS) {
         http_receive_response(socket, res, http);
@@ -199,8 +199,9 @@ http_res_t* http_download(http_t* http, const char* path, void* download, http_p
     uint64_t hasrecieve = 0;
     http_res_t *res = bs_new(http_res);
     
-    socket = socket_tcp(BS_TRUE);
+    connect_socket(&socket, http);
     http_send_request(socket, res, http);
+    
     if (res->response_code == BS_SUCCESS) {
         // http response header解析
         http_receive_header(socket, res, http);
@@ -241,7 +242,7 @@ http_res_t* http_upload(http_t *http, const char *path, void *upload, http_progr
     uint64_t contentLength = 0;
     http_res_t *res = bs_new(http_res);
     
-    socket = socket_tcp(BS_TRUE);
+    connect_socket(&socket, http);
     http_send_request(socket, res, http);
     if (res->response_code == BS_SUCCESS) {
         FILE *file = fopen(path, "rb");
@@ -265,6 +266,7 @@ http_res_t* http_upload(http_t *http, const char *path, void *upload, http_progr
                 hassend += len;
                 if (hassend / len % 10 == 1 || hassend >= contentLength) {
                     progressCallback(len, hassend, contentLength, upload); // 回调上传文件的进度值
+                    printf("------------%ld\n", hassend);
                 }
             }
         }
@@ -290,7 +292,7 @@ http_res_t* http_post_data(http_t *http, uint8_t *data, void *upload, http_progr
     uint64_t    len = 0;
     http_res_t* res = bs_new(http_res);
     
-    socket = socket_tcp(BS_TRUE);
+    connect_socket(&socket, http);
     http_send_request(socket, res, http);
     if (res->response_code == BS_SUCCESS) {
         //上传二进制数据
@@ -329,7 +331,6 @@ http_res_t* http_post_data(http_t *http, uint8_t *data, void *upload, http_progr
 }
 
 void http_send_request(int socket, http_res_t* http_res, http_t* http) {
-    http_res->response_code = connect_socket(socket, http);
     if (http_res->response_code == BS_SUCCESS) {
         socket_block(socket);
         http_res->response_code = write_timeout(socket, http->time_out);
@@ -385,15 +386,13 @@ void http_receive_header(int socket, http_res_t *http_res, http_t* http) {
     }
 }
 
-state_t connect_socket(int sock, http_t *http) {
-    bs_sock_ignore_sigpipe(sock);
-    
-    int err = bs_sock_connect(sock, http->url.domain.mem, http->url.port);
+state_t connect_socket(int *sock, http_t *http) {
+    int err = bs_tcp_sock_connect(sock, http->url.domain.mem, http->url.port, BS_TRUE);
     if (!(err == -1 || errno == EINPROGRESS) || err == BS_HOSTERR) {
         return BS_CONNERR;
     }
     
-    return connect_timeout(sock, http->time_out);
+    return connect_timeout(*sock, http->time_out);
 }
 
 state_t http_response_parse(http_res_t* res){
