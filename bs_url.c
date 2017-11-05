@@ -257,7 +257,7 @@ http_res_t* http_upload(http_t *http, const char *path, void *upload, http_progr
         // 设置socket的缓冲区
         int sock_buf_size = 10000;
         setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char *)&sock_buf_size, sizeof(sock_buf_size));
-        
+    
         //上传http文件
         while ((len = fread(buf, 1, sizeof(buf), file)) > 0) {
             if (write(socket, buf, (size_t)len) <= -1) {
@@ -266,12 +266,12 @@ http_res_t* http_upload(http_t *http, const char *path, void *upload, http_progr
                 hassend += len;
                 if (hassend / len % 10 == 1 || hassend >= contentLength) {
                     progressCallback(len, hassend, contentLength, upload); // 回调上传文件的进度值
-                    printf("------------%ld\n", hassend);
                 }
             }
         }
         
         http_receive_response(socket, res, http);
+        printf("------------finshed");
         fclose(file);
     }
     
@@ -349,20 +349,24 @@ void http_receive_response(int socket, http_res_t *http_res, http_t *http) {
     char buf[bufferSize];
     http_receive_header(socket, http_res, http);
     http_res_header res_header = parse_header(http_res->response.mem);
-    if (http_res->response_code == BS_SUCCESS) {
-        while((len = (int)read(socket, buf, sizeof(buf))) > 0) {
-            data_append(&http_res->response, buf, len);
-            receveLength += len;
-            if (receveLength >= res_header.content_length) {
-                break;
+    if (res_header.content_length > 0) {
+        if (http_res->response_code == BS_SUCCESS) {
+            while((len = (int)read(socket, buf, sizeof(buf))) > 0) {
+                data_append(&http_res->response, buf, len);
+                receveLength += len;
+                if (receveLength >= res_header.content_length) {
+                    break;
+                }
+            }
+            
+            if (len == -1) {
+                http_res->response_code = BS_SENDERR;
+            } else {
+                http_response_parse(http_res);
             }
         }
-        
-        if (len == -1) {
-            http_res->response_code = BS_SENDERR;
-        } else {
-            http_response_parse(http_res);
-        }
+    } else {
+        http_response_parse(http_res);
     }
 }
 
