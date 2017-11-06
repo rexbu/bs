@@ -177,10 +177,12 @@ http_res_header parse_header(const char *response)
 http_res_t* http_perform(http_t* http) {
     int socket;
     http_res_t *res = bs_new(http_res);
-    connect_socket(&socket, http);
-    http_send_request(socket, res, http);
+    res->response_code = connect_socket(&socket, http);
     if (res->response_code == BS_SUCCESS) {
-        http_receive_response(socket, res, http);
+        http_send_request(socket, res, http);
+        if (res->response_code == BS_SUCCESS) {
+            http_receive_response(socket, res, http);
+        }
     }
     
     if (res->response_code == -1 && errno == ETIMEDOUT) {
@@ -199,29 +201,31 @@ http_res_t* http_download(http_t* http, const char* path, void* download, http_p
     uint64_t hasrecieve = 0;
     http_res_t *res = bs_new(http_res);
     
-    connect_socket(&socket, http);
-    http_send_request(socket, res, http);
-    
+    res->response_code = connect_socket(&socket, http);
     if (res->response_code == BS_SUCCESS) {
-        // http response header解析
-        http_receive_header(socket, res, http);
+        http_send_request(socket, res, http);
+        
         if (res->response_code == BS_SUCCESS) {
-            FILE *file = fopen(path, "wb+");
-            if(file == NULL){
-                res->response_code = BS_CREATERR;
-            } else {
-                // 构建请求成功后的http状态消息
-                http_response_parse(res);
-                http_res_header res_header = parse_header(res->response.mem);
+            // http response header解析
+            http_receive_header(socket, res, http);
+            if (res->response_code == BS_SUCCESS) {
+                FILE *file = fopen(path, "wb+");
+                if(file == NULL){
+                    res->response_code = BS_CREATERR;
+                } else {
+                    // 构建请求成功后的http状态消息
+                    http_response_parse(res);
+                    http_res_header res_header = parse_header(res->response.mem);
                     
-                while (hasrecieve < res_header.content_length) {
-                    len = read(socket, buf, sizeof(buf));
-                    fwrite(buf, (size_t)len, 1, file);
-                    hasrecieve += len;      //更新已经下载的长度
-                    progressCallback(len, hasrecieve, res_header.content_length, download); // 回调下载文件的进度值
+                    while (hasrecieve < res_header.content_length) {
+                        len = read(socket, buf, sizeof(buf));
+                        fwrite(buf, (size_t)len, 1, file);
+                        hasrecieve += len;      //更新已经下载的长度
+                        progressCallback(len, hasrecieve, res_header.content_length, download); // 回调下载文件的进度值
+                    }
+                    
+                    fclose(file);
                 }
-                    
-                fclose(file);
             }
         }
     }
@@ -242,36 +246,38 @@ http_res_t* http_upload(http_t *http, const char *path, void *upload, http_progr
     uint64_t contentLength = 0;
     http_res_t *res = bs_new(http_res);
     
-    connect_socket(&socket, http);
-    http_send_request(socket, res, http);
+    res->response_code = connect_socket(&socket, http);
     if (res->response_code == BS_SUCCESS) {
-        FILE *file = fopen(path, "rb");
-        if(file == NULL){
-            res->response_code = BS_CREATERR;
-        } else {
-            // 获取文件的大小
-            fseek (file , 0 , SEEK_END);
-            contentLength = ftell (file);
-            rewind (file);
-        }
-        // 设置socket的缓冲区
-        int sock_buf_size = 10000;
-        setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char *)&sock_buf_size, sizeof(sock_buf_size));
-    
-        //上传http文件
-        while ((len = fread(buf, 1, sizeof(buf), file)) > 0) {
-            if (write(socket, buf, (size_t)len) <= -1) {
-                res->response_code = BS_SENDERR;
+        http_send_request(socket, res, http);
+        if (res->response_code == BS_SUCCESS) {
+            FILE *file = fopen(path, "rb");
+            if(file == NULL){
+                res->response_code = BS_CREATERR;
             } else {
-                hassend += len;
-                if (hassend / len % 10 == 1 || hassend >= contentLength) {
-                    progressCallback(len, hassend, contentLength, upload); // 回调上传文件的进度值
+                // 获取文件的大小
+                fseek (file , 0 , SEEK_END);
+                contentLength = ftell (file);
+                rewind (file);
+            }
+            // 设置socket的缓冲区
+            int sock_buf_size = 10000;
+            setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char *)&sock_buf_size, sizeof(sock_buf_size));
+            
+            //上传http文件
+            while ((len = fread(buf, 1, sizeof(buf), file)) > 0) {
+                if (write(socket, buf, (size_t)len) <= -1) {
+                    res->response_code = BS_SENDERR;
+                } else {
+                    hassend += len;
+                    if (hassend / len % 10 == 1 || hassend >= contentLength) {
+                        progressCallback(len, hassend, contentLength, upload); // 回调上传文件的进度值
+                    }
                 }
             }
+            
+            http_receive_response(socket, res, http);
+            fclose(file);
         }
-        
-        http_receive_response(socket, res, http);
-        fclose(file);
     }
     
     if (res->response_code == -1 && errno == ETIMEDOUT) {
@@ -291,33 +297,35 @@ http_res_t* http_post_data(http_t *http, uint8_t *data, void *upload, http_progr
     uint64_t    len = 0;
     http_res_t* res = bs_new(http_res);
     
-    connect_socket(&socket, http);
-    http_send_request(socket, res, http);
+    res->response_code = connect_socket(&socket, http);
     if (res->response_code == BS_SUCCESS) {
-        //上传二进制数据
-        size_t sock_buf_size = 10000;
-        setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char *)&sock_buf_size, sizeof(sock_buf_size));
-        uint64_t totalSize = http->body_size;
-        len = bufferSize;
-        while (hassend < totalSize) {
-            memset(buf, 0, bufferSize);
-            uint64_t remainSize = totalSize - hassend;
-            len = remainSize > bufferSize ? bufferSize : remainSize;
-            memcpy(buf, data + hassend, len);
-            if (write(socket, buf, (size_t)len) <= -1) {
-                close(socket);
-                bs_delete(http);
-                res->response_code = BS_SENDERR;
-                return res;
-            } else {
-                hassend += len;
-                if (hassend / len % 10 == 1 || hassend >= totalSize) {
-                    progressCallback(len, hassend, totalSize, upload);
+        http_send_request(socket, res, http);
+        if (res->response_code == BS_SUCCESS) {
+            //上传二进制数据
+            size_t sock_buf_size = 10000;
+            setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char *)&sock_buf_size, sizeof(sock_buf_size));
+            uint64_t totalSize = http->body_size;
+            len = bufferSize;
+            while (hassend < totalSize) {
+                memset(buf, 0, bufferSize);
+                uint64_t remainSize = totalSize - hassend;
+                len = remainSize > bufferSize ? bufferSize : remainSize;
+                memcpy(buf, data + hassend, len);
+                if (write(socket, buf, (size_t)len) <= -1) {
+                    close(socket);
+                    bs_delete(http);
+                    res->response_code = BS_SENDERR;
+                    return res;
+                } else {
+                    hassend += len;
+                    if (hassend / len % 10 == 1 || hassend >= totalSize) {
+                        progressCallback(len, hassend, totalSize, upload);
+                    }
                 }
             }
+            
+            http_receive_response(socket, res, http);
         }
-        
-        http_receive_response(socket, res, http);
     }
     
     if (res->response_code == -1 && errno == ETIMEDOUT) {
@@ -330,13 +338,11 @@ http_res_t* http_post_data(http_t *http, uint8_t *data, void *upload, http_progr
 }
 
 void http_send_request(int socket, http_res_t* http_res, http_t* http) {
+    socket_block(socket);
+    http_res->response_code = write_timeout(socket, http->time_out);
     if (http_res->response_code == BS_SUCCESS) {
-        socket_block(socket);
-        http_res->response_code = write_timeout(socket, http->time_out);
-        if (http_res->response_code == BS_SUCCESS) {
-            if (write(socket, http->req.mem, http->req.len) <= 0) {
-                http_res->response_code = BS_SENDERR;
-            }
+        if (write(socket, http->req.mem, http->req.len) <= 0) {
+            http_res->response_code = BS_SENDERR;
         }
     }
 }
@@ -512,7 +518,6 @@ state_t connect_timeout(int socket, uint32_t wait_seconds)
         }
     }
     
-    socket_block(socket);
     return ret;
 }
 
