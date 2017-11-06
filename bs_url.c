@@ -271,7 +271,6 @@ http_res_t* http_upload(http_t *http, const char *path, void *upload, http_progr
         }
         
         http_receive_response(socket, res, http);
-        printf("------------finshed");
         fclose(file);
     }
     
