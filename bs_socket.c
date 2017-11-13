@@ -33,7 +33,8 @@ state_t bs_tcp_sock_connect(int *sock, const char *ip, int port, bool_t is_nonbl
     } else {
         printf("ERROR: getaddrinfo error: %s\n", gai_strerror(status));
     }
-    
+  
+    freeaddrinfo(res);
     return status;
 }
 

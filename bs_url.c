@@ -154,24 +154,24 @@ void http_set_body(http_t* http, const char* body, uint32_t body_size){
 http_res_header parse_header(const char *response)
 {
     /*获取响应头的信息*/
-    struct http_res_header resp;
+    struct http_res_header response_header;
     
     char *header = strstr(response, "HTTP/1.1");
     //获取http状态代码
     if (header)
-        sscanf(header, "%*s %hd", &resp.status_code);
+        sscanf(header, "%*s %hd", &response_header.status_code);
     
     //获取返回文档类型
     header = strstr(response, "Content-Type:");
     if (header)
-        sscanf(header, "%*s %s", resp.content_type);
+        sscanf(header, "%*s %s", response_header.content_type);
     
     //获取返回文档长度
     header = strstr(response, "Content-Length:");
     if (header)
-        sscanf(header, "%*s %lld", &resp.content_length);
+        sscanf(header, "%*s %lld", &response_header.content_length);
     
-    return resp;
+    return response_header;
 }
 
 http_res_t* http_perform(http_t* http) {
@@ -184,13 +184,12 @@ http_res_t* http_perform(http_t* http) {
             http_receive_response(socket, res, http);
         }
     }
-    
+  
     if (res->response_code == -1 && errno == ETIMEDOUT) {
         res->response_code = BS_TIMEOUT;
     }
     
     close(socket);
-    bs_delete(http);
     return res;
 }
 
@@ -234,7 +233,6 @@ http_res_t* http_download(http_t* http, const char* path, void* download, http_p
         res->response_code = BS_TIMEOUT;
     }
     close(socket);
-    bs_delete(http);
     return res;
 }
 
@@ -285,7 +283,6 @@ http_res_t* http_upload(http_t *http, const char *path, void *upload, http_progr
     }
     
     close(socket);
-    bs_delete(http);
     return res;
 }
 
@@ -333,7 +330,6 @@ http_res_t* http_post_data(http_t *http, uint8_t *data, void *upload, http_progr
     }
     
     close(socket);
-    bs_delete(http);
     return res;
 }
 
@@ -400,7 +396,7 @@ state_t connect_socket(int *sock, http_t *http) {
     if (!(err == -1 || errno == EINPROGRESS) || err == BS_HOSTERR) {
         return BS_CONNERR;
     }
-    
+
     return connect_timeout(*sock, http->time_out);
 }
 
