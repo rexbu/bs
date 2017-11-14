@@ -310,7 +310,6 @@ http_res_t* http_post_data(http_t *http, uint8_t *data, void *upload, http_progr
                 memcpy(buf, data + hassend, len);
                 if (write(socket, buf, (size_t)len) <= -1) {
                     close(socket);
-                    bs_delete(http);
                     res->response_code = BS_SENDERR;
                     return res;
                 } else {
