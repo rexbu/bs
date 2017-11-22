@@ -25,15 +25,21 @@ state_t bs_tcp_sock_connect(int *sock, const char *ip, int port, bool_t is_nonbl
     hints.ai_protocol = 0;
     char portStr[8];
     snprintf(portStr, 8, "%d", port);
-    status = getaddrinfo(ip, portStr, &hints, &res);
-    if (status == 0) {
-        *sock = socket_create(res->ai_family, SOCK_STREAM, is_nonblock);
-        bs_sock_ignore_sigpipe(*sock);
-        status = connect(*sock, res->ai_addr, res->ai_addrlen);
-    } else {
-        printf("ERROR: getaddrinfo error: %s\n", gai_strerror(status));
+    int retryTimes = 3;
+    while (retryTimes > 0) {
+        // 偶尔DNS会解析失败，现在给一个重试机制，默认为重试3次
+        retryTimes -= 1;
+        status = getaddrinfo(ip, portStr, &hints, &res);
+        if (status == 0) {
+            *sock = socket_create(res->ai_family, SOCK_STREAM, is_nonblock);
+            bs_sock_ignore_sigpipe(*sock);
+            status = connect(*sock, res->ai_addr, res->ai_addrlen);
+            break;
+        } else {
+            printf("ERROR: getaddrinfo error: %s\n", gai_strerror(status));
+        }
     }
-  
+    
     freeaddrinfo(res);
     return status;
 }
